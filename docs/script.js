@@ -29,6 +29,99 @@ let remainingSeconds = 25 * 60;
 let timerInterval = null;
 let isRunning = false;
 
+
+// ==========================================
+// SOUND EFFECTS (Web Audio API)
+// ==========================================
+
+let audioContext = null;
+let alarmOscillator = null;
+let alarmGain = null;
+let alarmStopTimer = null;
+
+function getAudioContext() {
+    const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+    if (!AudioContextClass) return null;
+
+    if (!audioContext) audioContext = new AudioContextClass();
+    if (audioContext.state === "suspended") audioContext.resume();
+
+    return audioContext;
+}
+
+function playClickSound() {
+    const context = getAudioContext();
+    if (!context) return;
+
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+
+    oscillator.type = "sine";
+    oscillator.frequency.setValueAtTime(720, context.currentTime);
+    oscillator.frequency.exponentialRampToValueAtTime(520, context.currentTime + 0.055);
+
+    gain.gain.setValueAtTime(0.045, context.currentTime);
+    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.065);
+
+    oscillator.connect(gain);
+    gain.connect(context.destination);
+    oscillator.start();
+    oscillator.stop(context.currentTime + 0.07);
+}
+
+function stopCompletionAlarm() {
+    if (alarmStopTimer) {
+        clearTimeout(alarmStopTimer);
+        alarmStopTimer = null;
+    }
+
+    if (alarmOscillator) {
+        try { alarmOscillator.stop(); } catch (error) {}
+        alarmOscillator.disconnect();
+        alarmOscillator = null;
+    }
+
+    if (alarmGain) {
+        alarmGain.disconnect();
+        alarmGain = null;
+    }
+
+    if (stopAlarmButton) stopAlarmButton.style.display = "none";
+}
+
+function playCompletionAlarm() {
+    const context = getAudioContext();
+    if (!context) return;
+
+    stopCompletionAlarm();
+
+    alarmOscillator = context.createOscillator();
+    alarmGain = context.createGain();
+
+    alarmOscillator.type = "square";
+    alarmGain.gain.setValueAtTime(0.0001, context.currentTime);
+
+    // Eight-second repeating two-tone alarm.
+    for (let i = 0; i < 16; i++) {
+        const start = context.currentTime + i * 0.5;
+        alarmOscillator.frequency.setValueAtTime(i % 2 === 0 ? 880 : 660, start);
+        alarmGain.gain.setValueAtTime(0.0001, start);
+        alarmGain.gain.setValueAtTime(0.055, start + 0.025);
+        alarmGain.gain.setValueAtTime(0.055, start + 0.30);
+        alarmGain.gain.setValueAtTime(0.0001, start + 0.36);
+    }
+
+    alarmOscillator.connect(alarmGain);
+    alarmGain.connect(context.destination);
+    alarmOscillator.start();
+    alarmOscillator.stop(context.currentTime + 8.1);
+
+    if (stopAlarmButton) stopAlarmButton.style.display = "inline-block";
+    alarmStopTimer = setTimeout(() => {
+        stopCompletionAlarm();
+    }, 8200);
+}
+
 // ==========================================
 // SAVE DATA
 // ==========================================
@@ -102,7 +195,10 @@ function makeButton(parent, text, action, secondary = false) {
         button.style.boxShadow = "none";
     });
 
-    button.addEventListener("click", action);
+    button.addEventListener("click", () => {
+        playClickSound();
+        action();
+    });
 
     return button;
 }
@@ -455,12 +551,16 @@ startButton.style.flex = "1";
 
 makeButton(timerControls, "Reset", resetTimer, true);
 
+const stopAlarmButton = makeButton(timerControls, "Stop alarm", stopCompletionAlarm, true);
+stopAlarmButton.style.display = "none";
+
 // ==========================================
 // TIMER LOGIC - FIXED
 // ==========================================
 
 function setTimer(minutes) {
     stopTimer();
+    stopCompletionAlarm();
 
     selectedMinutes = minutes;
     remainingSeconds = minutes * 60;
@@ -473,6 +573,7 @@ function setTimer(minutes) {
 
 function startTimer() {
     if (isRunning || remainingSeconds <= 0) return;
+    stopCompletionAlarm();
 
     isRunning = true;
 
@@ -499,10 +600,9 @@ function startTimer() {
             updateStats();
             updateAnalytics();
 
-            timerStatus.textContent = "SESSION COMPLETED";
+            timerStatus.textContent = "SESSION COMPLETED — GREAT WORK!";
             startButton.textContent = "Start again";
-
-            alert("Great work! Your focus session is complete.");
+            playCompletionAlarm();
         }
     }, 1000);
 }
@@ -526,6 +626,7 @@ function stopTimer() {
 
 function resetTimer() {
     stopTimer();
+    stopCompletionAlarm();
 
     remainingSeconds = selectedMinutes * 60;
 
@@ -992,7 +1093,7 @@ const footer = create("div", {
 });
 
 footer.textContent =
-    "CAMPUSPULSE 4.1 | STUDY SMARTER. ACHIEVE MORE.";
+    "CAMPUSPULSE 4.2 | STUDY SMARTER. ACHIEVE MORE.";
 
 // ==========================================
 // RESPONSIVE LAYOUT
@@ -1039,4 +1140,4 @@ updateStats();
 updateAnalytics();
 adjustLayout();
 
-console.log("CampusPulse 4.1 started successfully.");
+console.log("CampusPulse 4.2 started successfully.");
