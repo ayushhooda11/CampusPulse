@@ -39,34 +39,47 @@ let alarmOscillator = null;
 let alarmGain = null;
 let alarmStopTimer = null;
 
-function getAudioContext() {
+async function getAudioContext() {
     const AudioContextClass = window.AudioContext || window.webkitAudioContext;
-    if (!AudioContextClass) return null;
+    if (!AudioContextClass) {
+        console.warn("Web Audio API is not supported in this browser.");
+        return null;
+    }
 
     if (!audioContext) audioContext = new AudioContextClass();
-    if (audioContext.state === "suspended") audioContext.resume();
 
-    return audioContext;
+    try {
+        if (audioContext.state !== "running") {
+            await audioContext.resume();
+        }
+    } catch (error) {
+        console.warn("Audio could not be started:", error);
+        return null;
+    }
+
+    return audioContext.state === "running" ? audioContext : null;
 }
 
-function playClickSound() {
-    const context = getAudioContext();
+async function playClickSound() {
+    const context = await getAudioContext();
     if (!context) return;
 
+    const now = context.currentTime;
     const oscillator = context.createOscillator();
     const gain = context.createGain();
 
     oscillator.type = "sine";
-    oscillator.frequency.setValueAtTime(720, context.currentTime);
-    oscillator.frequency.exponentialRampToValueAtTime(520, context.currentTime + 0.055);
+    oscillator.frequency.setValueAtTime(760, now);
+    oscillator.frequency.exponentialRampToValueAtTime(520, now + 0.09);
 
-    gain.gain.setValueAtTime(0.045, context.currentTime);
-    gain.gain.exponentialRampToValueAtTime(0.001, context.currentTime + 0.065);
+    gain.gain.setValueAtTime(0.0001, now);
+    gain.gain.exponentialRampToValueAtTime(0.07, now + 0.012);
+    gain.gain.exponentialRampToValueAtTime(0.0001, now + 0.12);
 
     oscillator.connect(gain);
     gain.connect(context.destination);
-    oscillator.start();
-    oscillator.stop(context.currentTime + 0.07);
+    oscillator.start(now);
+    oscillator.stop(now + 0.13);
 }
 
 function stopCompletionAlarm() {
@@ -89,37 +102,39 @@ function stopCompletionAlarm() {
     if (stopAlarmButton) stopAlarmButton.style.display = "none";
 }
 
-function playCompletionAlarm() {
-    const context = getAudioContext();
-    if (!context) return;
+async function playCompletionAlarm() {
+    const context = await getAudioContext();
+    if (!context) {
+        alert("Sound is unavailable. Check your browser/site sound permissions and device volume.");
+        return;
+    }
 
     stopCompletionAlarm();
 
+    const now = context.currentTime;
     alarmOscillator = context.createOscillator();
     alarmGain = context.createGain();
 
     alarmOscillator.type = "square";
-    alarmGain.gain.setValueAtTime(0.0001, context.currentTime);
+    alarmGain.gain.setValueAtTime(0.0001, now);
 
     // Eight-second repeating two-tone alarm.
     for (let i = 0; i < 16; i++) {
-        const start = context.currentTime + i * 0.5;
+        const start = now + i * 0.5;
         alarmOscillator.frequency.setValueAtTime(i % 2 === 0 ? 880 : 660, start);
         alarmGain.gain.setValueAtTime(0.0001, start);
-        alarmGain.gain.setValueAtTime(0.055, start + 0.025);
-        alarmGain.gain.setValueAtTime(0.055, start + 0.30);
+        alarmGain.gain.setValueAtTime(0.09, start + 0.025);
+        alarmGain.gain.setValueAtTime(0.09, start + 0.30);
         alarmGain.gain.setValueAtTime(0.0001, start + 0.36);
     }
 
     alarmOscillator.connect(alarmGain);
     alarmGain.connect(context.destination);
-    alarmOscillator.start();
-    alarmOscillator.stop(context.currentTime + 8.1);
+    alarmOscillator.start(now);
+    alarmOscillator.stop(now + 8.1);
 
     if (stopAlarmButton) stopAlarmButton.style.display = "inline-block";
-    alarmStopTimer = setTimeout(() => {
-        stopCompletionAlarm();
-    }, 8200);
+    alarmStopTimer = setTimeout(stopCompletionAlarm, 8200);
 }
 
 // ==========================================
@@ -551,8 +566,15 @@ startButton.style.flex = "1";
 
 makeButton(timerControls, "Reset", resetTimer, true);
 
-const stopAlarmButton = makeButton(timerControls, "Stop alarm", stopCompletionAlarm, true);
+const stopAlarmButton = makeButton(timerCard, "Stop alarm", stopCompletionAlarm, true);
 stopAlarmButton.style.display = "none";
+stopAlarmButton.style.marginTop = "10px";
+
+const testSoundButton = makeButton(timerCard, "Test alarm sound", playCompletionAlarm, true);
+testSoundButton.style.width = "100%";
+testSoundButton.style.marginTop = "10px";
+
+
 
 // ==========================================
 // TIMER LOGIC - FIXED
